@@ -1,60 +1,34 @@
-#define TOUCH_PIN 4
-#define LED_PIN   2
-#define THRESHOLD 500
-
-const int freq = 5000;
-const int resolution = 8;
-
-int speedLevel = 1;
-bool lastTouch = false;
-
-// 呼吸灯非阻塞变量
-int duty = 0;
-int dir = 1; // 1=变亮，-1=变暗
-unsigned long prevMillis = 0;
+const int ledPin1 = 2;
+const int ledPin2 = 5;
 
 void setup() {
   Serial.begin(115200);
-  ledcAttach(LED_PIN, freq, resolution);
+  pinMode(ledPin1, OUTPUT);
+  pinMode(ledPin2, OUTPUT);
 }
 
 void loop() {
-  // 触摸检测（立即响应）
-  int touchValue = touchRead(TOUCH_PIN);
-  bool currentTouch = (touchValue < THRESHOLD);
-
-  if (currentTouch && !lastTouch) {
-    speedLevel = (speedLevel % 3) + 1;
-    Serial.print("Speed Level: ");
-    Serial.println(speedLevel);
-    delay(200);
-  }
-  lastTouch = currentTouch;
-
-  // 档位速度
-  int step, delayTime;
-  if (speedLevel == 1) {
-    step = 1; delayTime = 7;
-  } else if (speedLevel == 2) {
-    step = 2; delayTime = 5;
-  } else {
-    step = 4; delayTime = 3;
+  // 第一阶段：LED1变亮，LED2变暗
+  for(int duty = 0; duty <= 255; duty++){
+    analogWrite(ledPin1, duty);          // D2: 0→255
+    analogWrite(ledPin2, 255 - duty);    // D5: 255→0
+    delay(3);
+    Serial.print("LED1: ");
+    Serial.print(duty);
+    Serial.print(" | LED2: ");
+    Serial.println(255 - duty);
   }
 
-  // 非阻塞呼吸灯
-  if (millis() - prevMillis >= delayTime) {
-    prevMillis = millis();
-    duty += dir * step;
-
-    if (duty >= 255) {
-      duty = 255;
-      dir = -1;
-    }
-    if (duty <= 0) {
-      duty = 0;
-      dir = 1;
-    }
-
-    ledcWrite(LED_PIN, duty);
+  // 第二阶段：LED1变暗，LED2变亮
+  for(int duty = 255; duty >= 0; duty--){
+    analogWrite(ledPin1, duty);          // D2: 255→0
+    analogWrite(ledPin2, 255 - duty);    // D5: 0→255
+    delay(3);
+    Serial.print("LED1: ");
+    Serial.print(duty);
+    Serial.print(" | LED2: ");
+    Serial.println(255 - duty);
   }
+
+  Serial.println("=== 循环完成 ===");
 }
