@@ -1,80 +1,108 @@
 #include <WiFi.h>
 #include <WebServer.h>
 
-const char* ssid = "cao";
-const char* password = "cao666666";
+// WiFi参数，和你之前保持一致
+const char* wifiName = "cao";
+const char* wifiPwd = "cao666666";
 
-const int TOUCH_PIN = T0; // GPIO4
+// 硬件定义
+const int ledPin = 2;
+const int touchPin = T0;
+
 WebServer server(80);
+// 系统状态
+bool systemArmed = false;
+bool alarmTriggered = false;
 
-// 实时触摸值
-int touchValue = 0;
-
-// 仪表盘网页
-String makePage() {
-  String html = R"rawliteral(
+// 网页控制界面
+void showWebUI()
+{
+  String htmlPage = R"HTML(
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="UTF-8">
-  <title>实时触摸传感器仪表盘</title>
-  <style>
-    body { text-align:center; font-family:Arial; margin-top:100px; }
-    .value { font-size:80px; color:#2c3e50; font-weight:bold; }
-    .label { font-size:24px; color:#7f8c8d; }
-  </style>
+<meta charset="UTF-8">
+<title>安防报警器</title>
+<style>
+body { text-align: center; margin-top: 90px; }
+button { font-size: 22px; padding: 12px 35px; margin: 8px; }
+#arm { background: #28a745; color: white; border: none; }
+#disarm { background: #dc3545; color: white; border: none; }
+</style>
 </head>
 <body>
-  <h1>ESP32 触摸传感器实时仪表盘</h1>
-  <div class="label">触摸值</div>
-  <div class="value" id="touchVal">0</div>
+<h2>ESP32 安防报警系统</h2>
+<button id="arm" onclick="sendOrder('arm')">布防 Arm</button>
+<button id="disarm" onclick="sendOrder('disarm')">撤防 Disarm</button>
 
-  <script>
-    // AJAX 实时拉取数据
-    function updateValue() {
-      fetch("/data")
-        .then(res => res.text())
-        .then(val => {
-          document.getElementById("touchVal").innerText = val;
-        });
-    }
-    // 每 100ms 更新一次
-    setInterval(updateValue, 100);
-  </script>
+<script>
+function sendOrder(cmd) {
+  fetch("/" + cmd);
+}
+</script>
 </body>
 </html>
-)rawliteral";
-  return html;
+)HTML";
+  server.send(200, "text/html; charset=utf-8", htmlPage);
 }
 
-// 根页面
-void handleRoot() {
-  server.send(200, "text/html; charset=UTF-8", makePage());
+// 布防功能
+void enableArm()
+{
+  systemArmed = true;
+  server.send(200, "text/plain", "已进入布防模式");
 }
 
-// 返回实时触摸值
-void handleData() {
-  touchValue = touchRead(TOUCH_PIN);
-  server.send(200, "text/plain", String(touchValue));
+// 撤防并重置报警
+void disableArm()
+{
+  systemArmed = false;
+  alarmTriggered = false;
+  digitalWrite(ledPin, LOW);
+  server.send(200, "text/plain", "已撤防，系统复位");
 }
 
-void setup() {
+void setup()
+{
   Serial.begin(115200);
+  pinMode(ledPin, OUTPUT);
+  digitalWrite(ledPin, LOW);
 
-  WiFi.begin(ssid, password);
-  Serial.print("连接WiFi");
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
+  // 连接WiFi
+  WiFi.begin(wifiName, wifiPwd);
+  while (WiFi.status() != WL_CONNECTED)
+  {
+    delay(350);
   }
-  Serial.println("\nWiFi OK");
-  Serial.println("访问：http://" + WiFi.localIP().toString());
+  Serial.print("设备IP：");
+  Serial.println(WiFi.localIP());
 
-  server.on("/", handleRoot);
-  server.on("/data", handleData); // 实时数据接口
+  // 配置网页路由
+  server.on("/", showWebUI);
+  server.on("/arm", enableArm);
+  server.on("/disarm", disableArm);
   server.begin();
 }
 
-void loop() {
+void loop()
+{
   server.handleClient();
+
+  // 布防状态下检测触摸触发报警
+  if (systemArmed && !alarmTriggered)
+  {
+    if (touchRead(touchPin) < 45)
+    {
+      alarmTriggered = true;
+    }
+  }
+
+  // 报警后LED持续高频闪烁，直到撤防
+  if (alarmTriggered)
+  {
+    digitalWrite(ledPin, HIGH);
+    delay(75);
+    digitalWrite(ledPin, LOW);
+    delay(75);
+  }
 }
